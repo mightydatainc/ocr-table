@@ -39,5 +39,9 @@
     "openai": "^6.2.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@mightydatainc/llm-conversation": "^1.0.8",
+    "pdf-to-png-converter": "^4.2.0"
   }
 }
