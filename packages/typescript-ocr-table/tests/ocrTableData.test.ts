@@ -526,7 +526,9 @@ and it looks like this:
     tables = _removeDashes(tables);
 
     expect(tables).toHaveLength(1);
-    expect(tables[0]?.name).toBe('Classic Science Fiction');
+    expect(tables[0]?.name).toContain('Classic Science Fiction');
+    // We use toContain rather than toBe or toEqual because it *could* say things
+    // like "PART ONE Classic Science Fiction" or "Part One: Classic Science Fiction", etc.
 
     // Replace em dashes and en dashes to make the test more permissible.
     let tableDescription = tables[0]?.description ?? '';
