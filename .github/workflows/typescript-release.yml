@@ -13,15 +13,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  ci:
+  ci-and-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
+      id-token: write
 
     environment: env-cicd
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      TWINE_USERNAME: __token__
+      TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
 
     defaults:
       run:
@@ -29,16 +32,23 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v5
         with:
           fetch-depth: 2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
+          # registry-url is required for npm's OIDC Trusted Publishing to work;
+          # it tells npm CLI which registry to authenticate against. NODE_AUTH_TOKEN
+          # is intentionally not set — auth is handled by the OIDC token via id-token: write.
+          registry-url: "https://registry.npmjs.org"
           cache: "npm"
           cache-dependency-path: packages/typescript-ocr-table/package-lock.json
+
+      - name: Upgrade npm
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
@@ -49,41 +59,7 @@ jobs:
       - name: Build package
         run: npm run build
 
-  publish:
-    needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      id-token: write
-
-    environment: env-cicd
-
-    defaults:
-      run:
-        working-directory: packages/typescript-ocr-table
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 2
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: "npm"
-          cache-dependency-path: packages/typescript-ocr-table/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build package
-        run: npm run build
-
-      - name: Read current and previous TypeScript versions
+      - name: Determine version and whether to publish
         id: version
         shell: bash
         run: |
@@ -91,24 +67,23 @@ jobs:
           CURRENT_VERSION=$(node -p "require('./package.json').version")
 
           SHOULD_PUBLISH=false
-          CHANGED=false
-          PREVIOUS_VERSION=""
-
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
             SHOULD_PUBLISH=true
-            PREVIOUS_VERSION=$(git show HEAD~1:packages/typescript-ocr-table/package.json 2>/dev/null | node -p "const fs=require('fs'); const s=fs.readFileSync(0,'utf8'); JSON.parse(s).version" || true)
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SHOULD_PUBLISH=true
           fi
 
-          if [ -z "${PREVIOUS_VERSION}" ]; then
-            if [ "${SHOULD_PUBLISH}" = "true" ]; then
+          # Treat the version as changed if it is not yet on the registry.
+          CHANGED=false
+          if [ "${SHOULD_PUBLISH}" = "true" ]; then
+            if curl -sf "https://registry.npmjs.org/@mightydatainc/ocr-table/${CURRENT_VERSION}" > /dev/null 2>&1; then
+              CHANGED=false
+            else
               CHANGED=true
             fi
-          elif [ "${CURRENT_VERSION}" != "${PREVIOUS_VERSION}" ]; then
-            CHANGED=true
           fi
 
           echo "current=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "previous=${PREVIOUS_VERSION}" >> "$GITHUB_OUTPUT"
           echo "changed=${CHANGED}" >> "$GITHUB_OUTPUT"
           echo "should_publish=${SHOULD_PUBLISH}" >> "$GITHUB_OUTPUT"
 
@@ -123,7 +98,7 @@ jobs:
           fi
 
           VERSION="${{ steps.version.outputs.current }}"
-          if npm view "@mightydatainc/ocr-table@${VERSION}" version >/dev/null 2>&1; then
+          if curl -sf "https://registry.npmjs.org/@mightydatainc/ocr-table/${VERSION}" > /dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -131,7 +106,10 @@ jobs:
 
       - name: Publish to npm
         if: steps.version.outputs.should_publish == 'true' && steps.version.outputs.changed == 'true' && steps.published.outputs.exists != 'true'
-        run: npm publish --ignore-scripts --access public --provenance
+        run: |
+          # --provenance is automatic with Trusted Publishing; --ignore-scripts skips redundant prepublishOnly.
+          # https://docs.npmjs.com/trusted-publishers#automatic-provenance-generation
+          npm publish --access public --ignore-scripts
 
       - name: Report release decision
         if: steps.version.outputs.should_publish != 'true' || steps.version.outputs.changed != 'true' || steps.published.outputs.exists == 'true'
@@ -140,5 +118,4 @@ jobs:
           echo "should_publish=${{ steps.version.outputs.should_publish }}"
           echo "version_changed=${{ steps.version.outputs.changed }}"
           echo "current_version=${{ steps.version.outputs.current }}"
-          echo "previous_version=${{ steps.version.outputs.previous }}"
           echo "already_published=${{ steps.published.outputs.exists }}"

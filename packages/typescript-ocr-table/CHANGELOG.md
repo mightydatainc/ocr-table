@@ -2,6 +2,12 @@
 
 All notable changes to this package will be documented in this file.
 
+## [1.1.22] - 2026-10-26
+
+### Changed
+
+- Updated `@mightydatainc/llm-conversation` to `^1.0.11`.
+
 ## [1.1.20] - 2026-04-29
 
 ### Fixed

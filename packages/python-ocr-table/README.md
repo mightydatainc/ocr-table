@@ -112,4 +112,4 @@ python -m pytest tests/ -v
 
 - Package name for `pip install` is `mightydatainc-semantic-match`.
 - Python import package is `mightydatainc_semantic_match`.
-- Requires Python 3.13+ and `mightydatainc-gpt-conversation>=1.3.2`.
+- Requires Python 3.13+.
