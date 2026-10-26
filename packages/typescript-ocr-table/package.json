@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Mighty-Data-Inc/ocr-table"
+    "url": "https://github.com/mightydatainc/ocr-table"
   },
   "type": "module",
   "sideEffects": false,
